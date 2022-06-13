@@ -1,7 +1,26 @@
-cabal-version: 2.4
+cabal-version: 2.2
 
+author: Mitchell Rosen
+bug-reports: https://github.com/awkward-squad/ersatz-pointer/issues
+category: Concurrency
+copyright: Copyright (C) 2020-2022 Mitchell Rosen, Travis Staton
+description: A friendly interface to weak pointers in GHC.
+homepage: https://github.com/awkward-squad/ersatz-pointer
+license: BSD-3-Clause
+license-file: LICENSE
+maintainer: Mitchell Rosen <mitchellwrosen@gmail.com>, Travis Staton <hello@travisstaton.com>
 name: ersatz-pointer
-version: 0.1.0
+stability: experimental
+synopsis: A friendly interface to weak pointers in GHC
+version: 0.3.0
+
+extra-source-files:
+  CHANGELOG.md
+  README.md
+
+source-repository head
+  type: git
+  location: https://github.com/awkward-squad/ersatz-pointer.git
 
 library
   build-depends: base ^>= 4.12 || ^>= 4.13 || ^>= 4.14 || ^>= 4.15 || ^>= 4.16
