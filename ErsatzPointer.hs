@@ -108,8 +108,8 @@ pattern source :=> target <-
 -- explicitly.
 establish :: (a :=> b) -> IO (a :=>? b)
 establish pointer@ErsatzPointer {sourceIdentity, maybeFinalizer} =
-  withPrimitiveIdentity sourceIdentity \identity# ->
-    coerce (makeWeakPointer identity# pointer maybeFinalizer)
+  case sourceIdentity of
+    PrimitiveIdentity# identity# -> coerce (makeWeakPointer identity# pointer maybeFinalizer)
 
 -- | Like 'establish', but does not return the __ersatz pointer reference__ @__r__@.
 --
@@ -234,28 +234,19 @@ class Source a where
 
 instance Source (IORef a) where
   primitiveIdentity :: IORef a -> PrimitiveIdentity
-  primitiveIdentity (IORef (STRef var#)) = SMutVar# var#
+  primitiveIdentity (IORef (STRef var#)) = PrimitiveIdentity# var#
 
 instance Source (MVar a) where
   primitiveIdentity :: MVar a -> PrimitiveIdentity
-  primitiveIdentity (MVar var#) = SMVar# var#
+  primitiveIdentity (MVar var#) = PrimitiveIdentity# var#
 
 instance Source (TVar a) where
   primitiveIdentity :: TVar a -> PrimitiveIdentity
-  primitiveIdentity (TVar var#) = STVar# var#
+  primitiveIdentity (TVar var#) = PrimitiveIdentity# var#
 
 -- | The primitive identity of a value.
 data PrimitiveIdentity where
-  SMutVar# :: MutVar# s a -> PrimitiveIdentity
-  SMVar# :: MVar# s a -> PrimitiveIdentity
-  STVar# :: TVar# s a -> PrimitiveIdentity
-
-withPrimitiveIdentity :: PrimitiveIdentity -> (forall (a :: TYPE 'UnliftedRep). a -> r) -> r
-withPrimitiveIdentity s k =
-  case s of
-    SMutVar# var# -> k var#
-    SMVar# var# -> k var#
-    STVar# var# -> k var#
+  PrimitiveIdentity# :: forall (a :: TYPE 'UnliftedRep). a -> PrimitiveIdentity
 
 makeWeakPointer :: forall (k# :: TYPE 'UnliftedRep) v. k# -> v -> Maybe (IO ()) -> IO (Weak v)
 makeWeakPointer k# v = \case
