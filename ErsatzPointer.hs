@@ -33,7 +33,6 @@ module ErsatzPointer
 where
 
 import Data.Functor
-import Data.Kind
 import GHC.Conc
 import GHC.Exts
 import GHC.IO
@@ -41,16 +40,29 @@ import GHC.IORef
 import GHC.MVar
 import GHC.STRef
 import GHC.Weak
-import System.Mem.Weak
 
 -- | An __ersatz pointer__.
 data a :=> b = forall (a# :: TYPE 'UnliftedRep).
-  Kv
-  { key :: a,
-    key# :: !PrimitiveIdentity,
-    value :: b,
+  ErsatzPointer
+  { source :: a,
+    sourceIdentity :: !PrimitiveIdentity,
+    target :: b,
     maybeFinalizer :: !(Maybe (IO ()))
   }
+
+{-# COMPLETE (:=>) #-}
+
+pattern (:=>) :: Source a => a -> b -> (a :=> b)
+pattern source :=> target <-
+  ErsatzPointer {source, target}
+  where
+    source :=> target =
+      ErsatzPointer
+        { source,
+          sourceIdentity = primitiveIdentity source,
+          target,
+          maybeFinalizer = Nothing
+        }
 
 -- | /Establish/ an __ersatz pointer__ @__p__@ from object @__a__@ to object @__b__@.
 --
@@ -95,13 +107,9 @@ data a :=> b = forall (a# :: TYPE 'UnliftedRep).
 -- then be used to determine whether @__a__@ has been garbage-collected, so long as @__r__@ is not /dismantled/
 -- explicitly.
 establish :: (a :=> b) -> IO (a :=>? b)
-establish v@Kv {key, key#, value, maybeFinalizer} =
-  withPrimitiveIdentity key# \k# -> do
-    w <-
-      case maybeFinalizer of
-        Nothing -> weakNoFinalizer k# v
-        Just finalizer -> weak k# v finalizer
-    pure (W w)
+establish pointer@ErsatzPointer {sourceIdentity, maybeFinalizer} =
+  withPrimitiveIdentity sourceIdentity \identity# ->
+    coerce (makeWeakPointer identity# pointer maybeFinalizer)
 
 -- | Like 'establish', but does not return the __ersatz pointer reference__ @__r__@.
 --
@@ -122,7 +130,7 @@ onDismantle x f =
 -- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
 -- /established/ at some point.
 newtype a :=>? b
-  = W (Weak (a :=> b))
+  = ErsatzPointerReference (Weak (a :=> b))
 
 -- | /Dereference/ an __ersatz pointer reference__ @__r__@ to determine whether the corresponding __ersatz pointer__
 -- @__p__@ from @__a__@ to @__b__@ is still /established/.
@@ -162,20 +170,8 @@ newtype a :=>? b
 -- └───────────┘
 -- @
 dereference :: (a :=>? b) -> IO (Maybe (a :=> b))
-dereference (W w) =
-  deRefWeak w
-
-{-# COMPLETE (:=>) #-}
-
-pattern (:=>) :: Source a => a -> b -> (a :=> b)
-pattern a :=> b <-
-  Kv {key = a, value = b}
-  where
-    key :=> value =
-      Kv {key, key#, value, maybeFinalizer}
-      where
-        key# = primitiveIdentity key
-        maybeFinalizer = Nothing
+dereference (ErsatzPointerReference weak) =
+  deRefWeak weak
 
 -- | /Dismantle/ an __ersatz pointer__ @__p__@ from @__a__@ to @__b__@, which
 --
@@ -210,8 +206,8 @@ pattern a :=> b <-
 --  └───────────┘
 -- @
 dismantle :: (a :=>? b) -> IO ()
-dismantle (W w) =
-  finalize w
+dismantle (ErsatzPointerReference weak) =
+  finalize weak
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Source
@@ -261,17 +257,13 @@ withPrimitiveIdentity s k =
     SMVar# var# -> k var#
     STVar# var# -> k var#
 
-------------------------------------------------------------------------------------------------------------------------
--- Misc. utils
-
-weak :: forall (k# :: TYPE 'UnliftedRep) v. k# -> v -> IO () -> IO (Weak v)
-weak k# v (IO f#) =
-  IO \s0# ->
-    case mkWeak# k# v f# s0# of
-      (# s1#, w# #) -> (# s1#, Weak w# #)
-
-weakNoFinalizer :: forall (k# :: TYPE 'UnliftedRep) v. k# -> v -> IO (Weak v)
-weakNoFinalizer k# v =
-  IO \s0# ->
-    case mkWeakNoFinalizer# k# v s0# of
-      (# s1#, w# #) -> (# s1#, Weak w# #)
+makeWeakPointer :: forall (k# :: TYPE 'UnliftedRep) v. k# -> v -> Maybe (IO ()) -> IO (Weak v)
+makeWeakPointer k# v = \case
+  Nothing ->
+    IO \s0# ->
+      case mkWeakNoFinalizer# k# v s0# of
+        (# s1#, w# #) -> (# s1#, Weak w# #)
+  Just (IO finalizer#) ->
+    IO \s0# ->
+      case mkWeak# k# v finalizer# s0# of
+        (# s1#, w# #) -> (# s1#, Weak w# #)
