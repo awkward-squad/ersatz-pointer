@@ -12,7 +12,7 @@ maintainer: Mitchell Rosen <mitchellwrosen@gmail.com>, Travis Staton <hello@trav
 name: ersatz-pointer
 stability: experimental
 synopsis: A friendly interface to weak pointers in GHC
-version: 0.3.0
+version: 0.1.0
 
 extra-source-files:
   CHANGELOG.md
