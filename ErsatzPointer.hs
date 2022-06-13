@@ -9,6 +9,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnboxedTuples #-}
@@ -45,7 +46,7 @@ import GHC.Weak
 data a :=> b = forall (a# :: TYPE 'UnliftedRep).
   ErsatzPointer
   { source :: a,
-    sourceIdentity :: !PrimitiveIdentity,
+    sourceIdentity# :: a#,
     target :: b,
     maybeFinalizer :: !(Maybe (IO ()))
   }
@@ -57,12 +58,14 @@ pattern source :=> target <-
   ErsatzPointer {source, target}
   where
     source :=> target =
-      ErsatzPointer
-        { source,
-          sourceIdentity = primitiveIdentity source,
-          target,
-          maybeFinalizer = Nothing
-        }
+      case primitiveIdentity source of
+        PrimitiveIdentity# sourceIdentity# ->
+          ErsatzPointer
+            { source,
+              sourceIdentity#,
+              target,
+              maybeFinalizer = Nothing
+            }
 
 -- | /Establish/ an __ersatz pointer__ @__p__@ from object @__a__@ to object @__b__@.
 --
@@ -107,9 +110,8 @@ pattern source :=> target <-
 -- then be used to determine whether @__a__@ has been garbage-collected, so long as @__r__@ is not /dismantled/
 -- explicitly.
 establish :: (a :=> b) -> IO (a :=>? b)
-establish pointer@ErsatzPointer {sourceIdentity, maybeFinalizer} =
-  case sourceIdentity of
-    PrimitiveIdentity# identity# -> coerce (makeWeakPointer identity# pointer maybeFinalizer)
+establish pointer@ErsatzPointer {sourceIdentity#, maybeFinalizer} =
+  coerce (makeWeakPointer sourceIdentity# pointer maybeFinalizer)
 
 -- | Like 'establish', but does not return the __ersatz pointer reference__ @__r__@.
 --
@@ -124,8 +126,8 @@ establish_ =
 -- | Schedule an @IO@ action to be run when @__p__@ is /dismantled/, which is either when @__a__@ is garbage-collected,
 -- or when @__p__@ is /dismantled/ explicitly, whichever comes first.
 onDismantle :: (a :=> b) -> IO () -> (a :=> b)
-onDismantle x f =
-  x {maybeFinalizer = maybeFinalizer x <> Just f}
+onDismantle pointer finalizer =
+  pointer {maybeFinalizer = maybeFinalizer pointer <> Just finalizer}
 
 -- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
 -- /established/ at some point.
@@ -248,13 +250,15 @@ instance Source (TVar a) where
 data PrimitiveIdentity where
   PrimitiveIdentity# :: forall (a :: TYPE 'UnliftedRep). a -> PrimitiveIdentity
 
-makeWeakPointer :: forall (k# :: TYPE 'UnliftedRep) v. k# -> v -> Maybe (IO ()) -> IO (Weak v)
-makeWeakPointer k# v = \case
+-- The type that System.Mem.Weak.mkWeak *should* have - unlifted first argument. (Even that isn't good enough - we
+-- really want to know this value has a primitive identity, hence the 'Source' class above).
+makeWeakPointer :: forall (source# :: TYPE 'UnliftedRep) target. source# -> target -> Maybe (IO ()) -> IO (Weak target)
+makeWeakPointer source# target = \case
   Nothing ->
     IO \s0# ->
-      case mkWeakNoFinalizer# k# v s0# of
-        (# s1#, w# #) -> (# s1#, Weak w# #)
+      case mkWeakNoFinalizer# source# target s0# of
+        (# s1#, weak# #) -> (# s1#, Weak weak# #)
   Just (IO finalizer#) ->
     IO \s0# ->
-      case mkWeak# k# v finalizer# s0# of
-        (# s1#, w# #) -> (# s1#, Weak w# #)
+      case mkWeak# source# target finalizer# s0# of
+        (# s1#, weak# #) -> (# s1#, Weak weak# #)
