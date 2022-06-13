@@ -236,12 +236,15 @@ class Source a where
   primitiveIdentity :: a -> PrimitiveIdentity
 
 instance Source (IORef a) where
+  primitiveIdentity :: IORef a -> PrimitiveIdentity
   primitiveIdentity (IORef (STRef var#)) = SMutVar# var#
 
 instance Source (MVar a) where
+  primitiveIdentity :: MVar a -> PrimitiveIdentity
   primitiveIdentity (MVar var#) = SMVar# var#
 
 instance Source (TVar a) where
+  primitiveIdentity :: TVar a -> PrimitiveIdentity
   primitiveIdentity (TVar var#) = STVar# var#
 
 -- | The primitive identity of a value.
