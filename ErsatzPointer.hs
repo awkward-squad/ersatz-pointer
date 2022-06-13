@@ -23,7 +23,7 @@ module ErsatzPointer
 
     -- * Ersatz pointer reference
     (:=>?),
-    examine,
+    dereference,
     dismantle,
 
     -- * Source
@@ -119,12 +119,13 @@ onDismantle :: (a :=> b) -> IO () -> (a :=> b)
 onDismantle x f =
   x {maybeFinalizer = maybeFinalizer x <> Just f}
 
--- | An __ersatz pointer reference__.
+-- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
+-- /established/ at some point.
 newtype a :=>? b
   = W (Weak (a :=> b))
 
--- | /Examine/ an __ersatz pointer reference__ @__r__@ to determine whether the corresponding __ersatz pointer__ @__p__@
--- from @__a__@ to @__b__@ is still /established/.
+-- | /Dereference/ an __ersatz pointer reference__ @__r__@ to determine whether the corresponding __ersatz pointer__
+-- @__p__@ from @__a__@ to @__b__@ is still /established/.
 --
 -- In general, if @__a__@ and @__b__@ are different objects, there are three possible cases, only two of which are
 -- distinguishable.
@@ -160,8 +161,8 @@ newtype a :=>? b
 -- │     __r__     │
 -- └───────────┘
 -- @
-examine :: (a :=>? b) -> IO (Maybe (a :=> b))
-examine (W w) =
+dereference :: (a :=>? b) -> IO (Maybe (a :=> b))
+dereference (W w) =
   deRefWeak w
 
 {-# COMPLETE (:=>) #-}
