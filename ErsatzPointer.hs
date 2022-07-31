@@ -216,8 +216,8 @@ dismantle (ErsatzPointerReference weak) =
 
 -- | The class of types that can be used as the source of an __ersatz pointer__.
 --
--- This includes types whose values have a primitive identity ('IORef', 'MVar', and 'TVar'), but may also include
--- product types that contain such a type via user-defined instances.
+-- This includes types whose values have a primitive identity, but may also include product types that contain such a
+-- type via user-defined instances.
 --
 -- ==== __Example user-defined instance__
 --
@@ -241,6 +241,10 @@ instance Source (IORef a) where
 instance Source (MVar a) where
   primitiveIdentity :: MVar a -> PrimitiveIdentity
   primitiveIdentity (MVar var#) = PrimitiveIdentity# var#
+
+instance Source ThreadId where
+  primitiveIdentity :: ThreadId -> PrimitiveIdentity
+  primitiveIdentity (ThreadId id#) = PrimitiveIdentity# id#
 
 instance Source (TVar a) where
   primitiveIdentity :: TVar a -> PrimitiveIdentity
