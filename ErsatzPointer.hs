@@ -43,7 +43,7 @@ import GHC.STRef
 import GHC.Weak
 
 -- | An __ersatz pointer__.
-data a :=> b = forall (a# :: TYPE 'UnliftedRep).
+data a :=> b = forall (a# :: TYPE UnliftedRep).
   ErsatzPointer
   { source :: a,
     sourceIdentity# :: a#,
@@ -248,11 +248,11 @@ instance Source (TVar a) where
 
 -- | The primitive identity of a value.
 data PrimitiveIdentity where
-  PrimitiveIdentity# :: forall (a :: TYPE 'UnliftedRep). a -> PrimitiveIdentity
+  PrimitiveIdentity# :: forall (a :: TYPE UnliftedRep). a -> PrimitiveIdentity
 
 -- The type that System.Mem.Weak.mkWeak *should* have - unlifted first argument. (Even that isn't good enough - we
 -- really want to know this value has a primitive identity, hence the 'Source' class above).
-makeWeakPointer :: forall (source# :: TYPE 'UnliftedRep) target. source# -> target -> Maybe (IO ()) -> IO (Weak target)
+makeWeakPointer :: forall (source# :: TYPE UnliftedRep) target. source# -> target -> Maybe (IO ()) -> IO (Weak target)
 makeWeakPointer source# target = \case
   Nothing ->
     IO \s0# ->
