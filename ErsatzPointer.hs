@@ -15,15 +15,25 @@
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ViewPatterns #-}
 
+-- |
+--
+-- Ersatz pointer: a friendly interface to weak pointers in GHC.
+--
+-- This module is intended to be imported qualified:
+--
+-- @
+-- import ErsatzPointer qualified as Ersatz (Pointer, PointerReference)
+-- import ErsatzPointer qualified as ErsatzPointer
+-- @
 module ErsatzPointer
   ( -- * Ersatz pointer
-    (:=>) ((:=>)),
+    Pointer(Pointer),
     establish,
     establish_,
     onDismantle,
 
     -- * Ersatz pointer reference
-    (:=>?),
+    PointerReference,
     dereference,
     dismantle,
 
@@ -46,25 +56,25 @@ import GHC.STRef (STRef (STRef))
 import GHC.Weak (Weak (Weak))
 import qualified System.Mem.Weak as Weak
 
--- | An __ersatz pointer__.
-data a :=> b = forall (a# :: TYPE UnliftedRep).
-  ErsatzPointer
+-- | An __ersatz pointer__ from object __a__ to object __b__.
+data Pointer a b = forall (a# :: TYPE UnliftedRep).
+  Pointer_
   { source :: a,
     sourceIdentity# :: a#,
     target :: b,
     maybeFinalizer :: !(Maybe (IO ()))
   }
 
-{-# COMPLETE (:=>) #-}
+{-# COMPLETE Pointer #-}
 
-pattern (:=>) :: Source a => a -> b -> (a :=> b)
-pattern source :=> target <-
-  ErsatzPointer {source, target}
+pattern Pointer :: Source a => a -> b -> Pointer a b
+pattern Pointer source target <-
+  Pointer_ {source, target}
   where
-    source :=> target =
+    Pointer source target =
       case primitiveIdentity source of
         PrimitiveIdentity# sourceIdentity# ->
-          ErsatzPointer
+          Pointer_
             { source,
               sourceIdentity#,
               target,
@@ -84,25 +94,25 @@ pattern source :=> target <-
 --   explicitly, whichever comes first.
 --
 -- @
---        ┌ /Memory/ ───┐
---        │ __a__       __b__ │
---        └───────────┘
+--          ┌ /Memory/ ───┐
+--          │ __a__       __b__ │
+--          └───────────┘
 --
---              ┊
---              ▼
+--                ┊
+--                ▼
 --
--- ┌ /Code/ ────────────────────┐
--- │ __r__ \<- 'establish' (__a__ ':=>' __b__) │
--- └──────────────────────────┘
+-- ┌ /Code/ ────────────────────────┐
+-- │ __r__ \<- 'establish' ('Pointer' __a__ __b__) │
+-- └──────────────────────────────┘
 --
---              ┊
---              ▼
+--                ┊
+--                ▼
 --
---        ┌ /Memory/ ───┐
---        │ __a__ ──__p__─➤ __b__ │
---        │     ⇡     │
---        │     __r__     │
---        └───────────┘
+--          ┌ /Memory/ ───┐
+--          │ __a__ ──__p__─➤ __b__ │
+--          │     ⇡     │
+--          │     __r__     │
+--          └───────────┘
 -- @
 --
 -- Note that it may be the case that
@@ -113,8 +123,8 @@ pattern source :=> target <-
 -- In either case, /establishing/ an __ersatz pointer__ from @__a__@ to @__b__@ may still be useful, because @__r__@ can
 -- then be used to determine whether @__a__@ has been garbage-collected, so long as @__r__@ is not /dismantled/
 -- explicitly.
-establish :: (a :=> b) -> IO (a :=>? b)
-establish pointer@ErsatzPointer {sourceIdentity#, maybeFinalizer} =
+establish :: Pointer a b -> IO (PointerReference a b)
+establish pointer@Pointer_ {sourceIdentity#, maybeFinalizer} =
   coerce (makeWeakPointer sourceIdentity# pointer maybeFinalizer)
 
 -- | Like 'establish', but does not return the __ersatz pointer reference__ @__r__@.
@@ -123,20 +133,20 @@ establish pointer@ErsatzPointer {sourceIdentity#, maybeFinalizer} =
 --
 -- * @__a__@ already cotains an actual pointer to @__b__@.
 -- * @__a__@ and @__b__@ are the same object.
-establish_ :: (a :=> b) -> IO ()
+establish_ :: Pointer a b -> IO ()
 establish_ =
   void . establish
 
 -- | Schedule an @IO@ action to be run when @__p__@ is /dismantled/, which is either when @__a__@ is garbage-collected,
 -- or when @__p__@ is /dismantled/ explicitly, whichever comes first.
-onDismantle :: IO () -> (a :=> b) -> (a :=> b)
+onDismantle :: IO () -> Pointer a b -> Pointer a b
 onDismantle finalizer pointer =
   pointer {maybeFinalizer = maybeFinalizer pointer <> Just finalizer}
 
 -- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
 -- /established/ at some point.
-newtype a :=>? b
-  = ErsatzPointerReference (Weak (a :=> b))
+newtype PointerReference a b
+  = PointerReference (Weak (Pointer a b))
 
 -- | /Dereference/ an __ersatz pointer reference__ @__r__@ to determine whether the corresponding __ersatz pointer__
 -- @__p__@ from @__a__@ to @__b__@ is still /established/.
@@ -175,8 +185,8 @@ newtype a :=>? b
 -- │     __r__     │
 -- └───────────┘
 -- @
-dereference :: (a :=>? b) -> IO (Maybe (a :=> b))
-dereference (ErsatzPointerReference weak) =
+dereference :: PointerReference a b -> IO (Maybe (Pointer a b))
+dereference (PointerReference weak) =
   Weak.deRefWeak weak
 
 -- | /Dismantle/ an __ersatz pointer__ @__p__@ from @__a__@ to @__b__@, which
@@ -211,8 +221,8 @@ dereference (ErsatzPointerReference weak) =
 --  │     __r__     │
 --  └───────────┘
 -- @
-dismantle :: (a :=>? b) -> IO ()
-dismantle (ErsatzPointerReference weak) =
+dismantle :: PointerReference a b -> IO ()
+dismantle (PointerReference weak) =
   Weak.finalize weak
 
 ------------------------------------------------------------------------------------------------------------------------
