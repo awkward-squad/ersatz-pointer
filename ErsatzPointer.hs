@@ -19,6 +19,19 @@
 --
 -- Ersatz pointer: a safe and friendly interface to weak pointers in GHC.
 --
+-- This module merely wraps the existing weak pointer interface provided by "System.Mem.Weak" in a different skin; its
+-- primary purpose is to teach users how to use weak pointers with diagrams and intuitive names.
+--
+-- Nonetheless, even if you already understand how to use weak pointers, you may be interested in using this library
+-- because of two small improvements:
+--
+-- * The 'Source' type class, which classifies types that are safe to use as the source of a weak pointer, per the
+--   disclaimer:
+--
+--     /"WARNING: weak pointers to ordinary non-primitive Haskell types are particularly fragile, because the compiler is free to optimise away or duplicate the underlying data structure."/
+--
+-- * The 'Material' phantom type, which allows one to create weak pointers that cannot be finalized early.
+--
 -- This module is intended to be imported qualified:
 --
 -- @
@@ -139,6 +152,11 @@ construct_ =
 
 -- | Schedule an @IO@ action to be run when @__p__@ is /demolished/, which is either when @__a__@ is garbage-collected,
 -- or when @__p__@ is /demolished/ explicitly, whichever comes first.
+--
+-- @
+-- 'Pointer' a b
+--   & 'onDemolish' f
+-- @
 onDemolish :: IO () -> Pointer a b -> Pointer a b
 onDemolish finalizer pointer =
   pointer {maybeFinalizer = maybeFinalizer pointer <> Just finalizer}
@@ -241,7 +259,7 @@ demolish (PointerReference weak) =
 -- This includes types whose values have a primitive identity, but may also include product types that contain such a
 -- type via user-defined instances.
 --
--- ==== __👉 Example user-defined instance__
+-- ==== __👉 Example: user-defined instance__
 --
 -- @
 -- data MyRecord = MyRecord
