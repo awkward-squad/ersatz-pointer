@@ -129,8 +129,8 @@ establish_ =
 
 -- | Schedule an @IO@ action to be run when @__p__@ is /dismantled/, which is either when @__a__@ is garbage-collected,
 -- or when @__p__@ is /dismantled/ explicitly, whichever comes first.
-onDismantle :: (a :=> b) -> IO () -> (a :=> b)
-onDismantle pointer finalizer =
+onDismantle :: IO () -> (a :=> b) -> (a :=> b)
+onDismantle finalizer pointer =
   pointer {maybeFinalizer = maybeFinalizer pointer <> Just finalizer}
 
 -- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
