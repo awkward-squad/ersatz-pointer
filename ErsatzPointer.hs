@@ -33,14 +33,18 @@ module ErsatzPointer
   )
 where
 
-import Data.Functor
-import GHC.Conc
-import GHC.Exts
-import GHC.IO
-import GHC.IORef
-import GHC.MVar
-import GHC.STRef
-import GHC.Weak
+import Data.Coerce (coerce)
+import Data.Functor (void)
+import Data.IORef (IORef)
+import GHC.Base (IO (IO), UnliftedRep, mkWeak#, mkWeakNoFinalizer#)
+import GHC.Conc (TVar (TVar), ThreadId (ThreadId))
+import GHC.Exts (TYPE)
+import GHC.IO ()
+import GHC.IORef (IORef (IORef))
+import GHC.MVar (MVar (MVar))
+import GHC.STRef (STRef (STRef))
+import GHC.Weak (Weak (Weak))
+import qualified System.Mem.Weak as Weak
 
 -- | An __ersatz pointer__.
 data a :=> b = forall (a# :: TYPE UnliftedRep).
@@ -173,7 +177,7 @@ newtype a :=>? b
 -- @
 dereference :: (a :=>? b) -> IO (Maybe (a :=> b))
 dereference (ErsatzPointerReference weak) =
-  deRefWeak weak
+  Weak.deRefWeak weak
 
 -- | /Dismantle/ an __ersatz pointer__ @__p__@ from @__a__@ to @__b__@, which
 --
@@ -209,7 +213,7 @@ dereference (ErsatzPointerReference weak) =
 -- @
 dismantle :: (a :=>? b) -> IO ()
 dismantle (ErsatzPointerReference weak) =
-  finalize weak
+  Weak.finalize weak
 
 ------------------------------------------------------------------------------------------------------------------------
 -- Source
