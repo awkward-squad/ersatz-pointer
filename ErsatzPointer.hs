@@ -219,7 +219,7 @@ dismantle (ErsatzPointerReference weak) =
 -- This includes types whose values have a primitive identity, but may also include product types that contain such a
 -- type via user-defined instances.
 --
--- ==== __Example user-defined instance__
+-- ==== __👉 Example user-defined instance__
 --
 -- @
 -- data MyRecord = MyRecord
@@ -231,6 +231,9 @@ dismantle (ErsatzPointerReference weak) =
 -- instance 'Source' MyRecord where
 --   'primitiveIdentity' MyRecord{ref} = 'primitiveIdentity' ref
 -- @
+--
+-- Take care when writing such instances: a user of a `MyRecord` value should not be able to obtain a reference to the
+-- `ref` contained within, either directly or via a closure.
 class Source a where
   primitiveIdentity :: a -> PrimitiveIdentity
 
