@@ -147,8 +147,8 @@ construct pointer@Pointer_ {sourceIdentity#, maybeFinalizer} =
 
 -- | Like 'construct', but does not return the __ersatz pointer reference__ @__r__@.
 construct_ :: Pointer a b -> IO ()
-construct_ =
-  void . construct
+construct_ Pointer_ {sourceIdentity#, target, maybeFinalizer} =
+  void (makeWeakPointer sourceIdentity# target maybeFinalizer)
 
 -- | Schedule an @IO@ action to be run when @__p__@ is /demolished/, which is either when @__a__@ is garbage-collected,
 -- or when @__p__@ is /demolished/ explicitly, whichever comes first.
