@@ -17,7 +17,7 @@
 
 -- |
 --
--- Ersatz pointer: a friendly interface to weak pointers in GHC.
+-- Ersatz pointer: a safe and friendly interface to weak pointers in GHC.
 --
 -- This module is intended to be imported qualified:
 --
@@ -27,15 +27,16 @@
 -- @
 module ErsatzPointer
   ( -- * Ersatz pointer
-    Pointer(Pointer),
-    establish,
-    establish_,
-    onDismantle,
+    Pointer (Pointer),
+    construct,
+    construct_,
+    onDemolish,
 
     -- * Ersatz pointer reference
     PointerReference,
+    Material (..),
     dereference,
-    dismantle,
+    demolish,
 
     -- * Source
     Source (..),
@@ -56,7 +57,7 @@ import GHC.STRef (STRef (STRef))
 import GHC.Weak (Weak (Weak))
 import qualified System.Mem.Weak as Weak
 
--- | An __ersatz pointer__ from object __a__ to object __b__.
+-- | An __ersatz pointer__ from object @__a__@ to object @__b__@.
 data Pointer a b = forall (a# :: TYPE UnliftedRep).
   Pointer_
   { source :: a,
@@ -81,7 +82,7 @@ pattern Pointer source target <-
               maybeFinalizer = Nothing
             }
 
--- | /Establish/ an __ersatz pointer__ @__p__@ from object @__a__@ to object @__b__@.
+-- | /Construct/ an __ersatz pointer__ @__p__@ made of material @__t__@ from object @__a__@ to object @__b__@.
 --
 -- When this function is called,
 --
@@ -90,71 +91,76 @@ pattern Pointer source target <-
 --   and one of its fields.
 --
 -- * An __ersatz pointer reference__ @__r__@ is created, and can be used to determine whether @__p__@ is still
---   /established/, which will be the case until either @__a__@ is garbage-collected, or @__p__@ is /dismantled/
---   explicitly, whichever comes first.
+--   /constructed/, which will be the case until either:
 --
--- @
---          ┌ /Memory/ ───┐
---          │ __a__       __b__ │
---          └───────────┘
---
---                ┊
---                ▼
---
--- ┌ /Code/ ────────────────────────┐
--- │ __r__ \<- 'establish' ('Pointer' __a__ __b__) │
--- └──────────────────────────────┘
---
---                ┊
---                ▼
---
---          ┌ /Memory/ ───┐
---          │ __a__ ──__p__─➤ __b__ │
---          │     ⇡     │
---          │     __r__     │
---          └───────────┘
--- @
+--     * @__a__@ is garbage-collected
+--     * @__p__@ is /demolished/ explicitly, which is only possible if it is made of __straw__.
 --
 -- Note that it may be the case that
 --
--- * @__a__@ already cotains an actual pointer to @__b__@.
+-- * @__a__@ already contains an actual pointer to @__b__@.
 -- * @__a__@ and @__b__@ are the same object.
 --
--- In either case, /establishing/ an __ersatz pointer__ from @__a__@ to @__b__@ may still be useful, because @__r__@ can
--- then be used to determine whether @__a__@ has been garbage-collected, so long as @__r__@ is not /dismantled/
+-- In either case, /constructing/ an __ersatz pointer__ from @__a__@ to @__b__@ may still be useful, because @__r__@ can
+-- then be used to determine whether @__a__@ has been garbage-collected, so long as @__r__@ is not /demolished/
 -- explicitly.
-establish :: Pointer a b -> IO (PointerReference a b)
-establish pointer@Pointer_ {sourceIdentity#, maybeFinalizer} =
+--
+-- ==== __👉 Diagram: constructing an ersatz pointer between distinct objects__
+--
+-- @
+--              ┌ /Memory/ ───┐
+--              │ __a__       __b__ │
+--              └───────────┘
+--
+--                    ┊
+--                    ▼
+--
+-- ┌ /Code/ ────────────────────────────────┐
+-- │ __r__ \<- 'construct' \@''Straw' ('Pointer' __a__ __b__) │
+-- └──────────────────────────────────────┘
+--
+--                    ┊
+--                    ▼
+--
+--              ┌ /Memory/ ───┐
+--              │ __a__ ──__p__─➤ __b__ │
+--              │     ⇡     │
+--              │     __r__     │
+--              └───────────┘
+-- @
+construct :: forall t a b. Pointer a b -> IO (PointerReference t a b)
+construct pointer@Pointer_ {sourceIdentity#, maybeFinalizer} =
   coerce (makeWeakPointer sourceIdentity# pointer maybeFinalizer)
 
--- | Like 'establish', but does not return the __ersatz pointer reference__ @__r__@.
---
--- This is not useful if either
---
--- * @__a__@ already cotains an actual pointer to @__b__@.
--- * @__a__@ and @__b__@ are the same object.
-establish_ :: Pointer a b -> IO ()
-establish_ =
-  void . establish
+-- | Like 'construct', but does not return the __ersatz pointer reference__ @__r__@.
+construct_ :: Pointer a b -> IO ()
+construct_ =
+  void . construct
 
--- | Schedule an @IO@ action to be run when @__p__@ is /dismantled/, which is either when @__a__@ is garbage-collected,
--- or when @__p__@ is /dismantled/ explicitly, whichever comes first.
-onDismantle :: IO () -> Pointer a b -> Pointer a b
-onDismantle finalizer pointer =
+-- | Schedule an @IO@ action to be run when @__p__@ is /demolished/, which is either when @__a__@ is garbage-collected,
+-- or when @__p__@ is /demolished/ explicitly, whichever comes first.
+onDemolish :: IO () -> Pointer a b -> Pointer a b
+onDemolish finalizer pointer =
   pointer {maybeFinalizer = maybeFinalizer pointer <> Just finalizer}
 
 -- | An __ersatz pointer reference__ is a reference to an __ersatz pointer__, and is evidence that the pointer was
--- /established/ at some point.
-newtype PointerReference a b
+-- /constructed/ at some point.
+newtype PointerReference (t :: Material) a b
   = PointerReference (Weak (Pointer a b))
 
+-- | The __material__ an __ersatz pointer reference__ was /constructed/ with.
+--
+-- Following the three little pigs, one of __straw__ can be /demolished/, but one of __brick__ cannot.
+data Material
+  = Straw
+  | Brick
+
 -- | /Dereference/ an __ersatz pointer reference__ @__r__@ to determine whether the corresponding __ersatz pointer__
--- @__p__@ from @__a__@ to @__b__@ is still /established/.
+-- @__p__@ from @__a__@ to @__b__@ is still /constructed/.
 --
--- In general, if @__a__@ and @__b__@ are different objects, there are three possible cases, only two of which are
--- distinguishable.
+-- In general, if @__a__@ and @__b__@ are different objects, there are three possible cases.
 --
--- * @__p__@ is still /established/, because @__a__@ (and therefore @__b__@) are still alive.
+-- * @__p__@ is still /constructed/, because @__a__@ (and therefore @__b__@) are still alive.
 --
 -- @
 -- ┌ /Memory/ ───┐
@@ -164,7 +170,7 @@ newtype PointerReference a b
 -- └───────────┘
 -- @
 --
--- * @__p__@ was /dismantled/ because @__a__@ was garbage-collected; it is unknown whether @__b__@ is still alive,
+-- * @__p__@ was /demolished/ because @__a__@ was garbage-collected; it is unknown whether @__b__@ is still alive,
 --   because @__b__@ may still be referred to by another object.
 --
 -- @
@@ -175,8 +181,10 @@ newtype PointerReference a b
 -- └───────────┘
 -- @
 --
--- * @__p__@ was /dismantled/ explicitly; it is unknown whether @__a__@ is still alive, and whether @__b__@ is still
+-- * @__p__@ was /demolished/ explicitly; it is unknown whether @__a__@ is still alive, and whether @__b__@ is still
 --   alive.
+--
+--     This case is not possible @__p__@ is made of __brick__.
 --
 -- @
 -- ┌ /Memory/ ───┐
@@ -185,18 +193,18 @@ newtype PointerReference a b
 -- │     __r__     │
 -- └───────────┘
 -- @
-dereference :: PointerReference a b -> IO (Maybe (Pointer a b))
+dereference :: PointerReference t a b -> IO (Maybe (Pointer a b))
 dereference (PointerReference weak) =
   Weak.deRefWeak weak
 
--- | /Dismantle/ an __ersatz pointer__ @__p__@ from @__a__@ to @__b__@, which
+-- | /Demolish/ an __ersatz pointer__ @__p__@ from @__a__@ to @__b__@, which
 --
--- 1. Undoes the relationship established by 'establish', i.e. makes it no longer the case that if @__a__@ is alive,
+-- 1. Undoes the relationship established by 'construct', i.e. makes it no longer the case that if @__a__@ is alive,
 --    @__b__@ is too.
--- 2. Causes any registered 'onDismantle' actions to be run immediately.
+-- 2. Causes any registered 'onDemolish' actions to be run immediately.
 --
--- This action is a no-op if @__p__@ was alread /dismantled/, either because @__a__@ was already garbage-collected, or
--- because it was /dismantled/ explicitly.
+-- This action is a no-op if @__p__@ was alread /demolished/, either because @__a__@ was already garbage-collected, or
+-- because it was /demolished/ explicitly.
 --
 -- @
 --  ┌ /Memory/ ───┐
@@ -205,15 +213,15 @@ dereference (PointerReference weak) =
 --  │     __r__     │
 --  └───────────┘
 --
---        ┊
---        ▼
+--       ┊
+--       ▼
 --
--- ┌ /Code/ ───────┐
--- │ 'dismantle' __r__ │
--- └─────────────┘
+-- ┌ /Code/ ──────┐
+-- │ 'demolish' __r__ │
+-- └────────────┘
 --
---        ┊
---        ▼
+--       ┊
+--       ▼
 --
 --  ┌ /Memory/ ───┐
 --  │ __a__       __b__ │
@@ -221,8 +229,8 @@ dereference (PointerReference weak) =
 --  │     __r__     │
 --  └───────────┘
 -- @
-dismantle :: PointerReference a b -> IO ()
-dismantle (PointerReference weak) =
+demolish :: PointerReference 'Straw a b -> IO ()
+demolish (PointerReference weak) =
   Weak.finalize weak
 
 ------------------------------------------------------------------------------------------------------------------------
