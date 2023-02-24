@@ -35,8 +35,80 @@
 -- This module is intended to be imported qualified:
 --
 -- @
--- import ErsatzPointer qualified as Ersatz (Pointer, PointerReference)
+-- import ErsatzPointer qualified as Ersatz (Pointer (Pointer), PointerReference)
 -- import ErsatzPointer qualified as ErsatzPointer
+-- @
+--
+-- ==== __👉 Example: a whirlwind tour of this library__
+--
+-- @
+-- {-# LANGUAGE DataKinds #-}
+-- {-# LANGUAGE ImportQualifiedPost #-}
+-- {-# LANGUAGE LambdaCase #-}
+-- {-# LANGUAGE NumericUnderscores #-}
+-- {-# LANGUAGE TypeApplications #-}
+--
+-- import Control.Concurrent (threadDelay)
+-- import Data.Function ((&))
+-- import Data.IORef (newIORef, readIORef)
+-- import ErsatzPointer qualified as Ersatz (Pointer (Pointer))
+-- import ErsatzPointer qualified as ErsatzPointer
+-- import System.Mem (performGC)
+--
+-- main :: IO ()
+-- main = do
+--   source <- newIORef ()
+--   let target = 17 :: Int
+--
+--   -- Construct an ersatz pointer made of straw from source to target.
+--   strawPointerReference <-
+--     ErsatzPointer.'construct' \@'ErsatzPointer.'Straw' $
+--       Ersatz.'Pointer' source target
+--         & ErsatzPointer.'onDemolish' (putStrLn "Goodbye, straw world!")
+--
+--   let queryStrawPointer =
+--         ErsatzPointer.'dereference' strawPointerReference >>= \case
+--           Nothing -> putStrLn "Straw pointer is no longer constructed."
+--           Just (Ersatz.'Pointer' _source _target) -> putStrLn "Straw pointer is still constructed."
+--
+--   -- Construct an ersatz pointer made of brick from source to target.
+--   brickPointerReference <-
+--     ErsatzPointer.'construct' \@'ErsatzPointer.'Brick' $
+--       Ersatz.'Pointer' source target
+--         & ErsatzPointer.'onDemolish' (putStrLn "Goodbye, brick world!")
+--
+--   let queryBrickPointer =
+--         ErsatzPointer.'dereference' brickPointerReference >>= \case
+--           Nothing -> putStrLn "Brick pointer is no longer constructed."
+--           Just (Ersatz.'Pointer' _source _target) -> putStrLn "Brick pointer is still constructed."
+--
+--   -- Query whether the straw pointer is still constructed.
+--   queryStrawPointer
+--
+--   -- Query whether the brick pointer is still constructed.
+--   queryBrickPointer
+--
+--   -- Demolish the straw pointer before the source is garbage-collected, and observe that its finalizer runs.
+--   ErsatzPointer.'demolish' strawPointerReference
+--
+--   -- Query whether the straw pointer is still constructed.
+--   queryStrawPointer
+--
+--   -- Observe that a second demolish is a no-op: its finalizer does not run again.
+--   ErsatzPointer.'demolish' strawPointerReference
+--
+--   -- Keep the source alive until here.
+--   readIORef source
+--
+--   -- Run a major GC and observe that the brick pointer finalizer runs.
+--   putStrLn "Running performGC"
+--   performGC
+--
+--   -- Sleep for 100ms just to allow finalizer to run.
+--   threadDelay 100_000
+--
+--   -- Query whether the brick pointer is still constructed.
+--   queryBrickPointer
 -- @
 module ErsatzPointer
   ( -- * Ersatz pointer
@@ -147,7 +219,7 @@ construct pointer@Pointer_ {sourceIdentity#, maybeFinalizer} =
 
 -- | Like 'construct', but does not return the __ersatz pointer reference__ @__r__@.
 construct_ :: Pointer a b -> IO ()
-construct_ Pointer_ {sourceIdentity#, target, maybeFinalizer} =
+construct_ Pointer_{sourceIdentity#, target, maybeFinalizer} =
   void (makeWeakPointer sourceIdentity# target maybeFinalizer)
 
 -- | Schedule an @IO@ action to be run when @__p__@ is /demolished/, which is either when @__a__@ is garbage-collected,
@@ -259,7 +331,7 @@ demolish (PointerReference weak) =
 -- This includes types whose values have a primitive identity, but may also include product types that contain such a
 -- type via user-defined instances.
 --
--- ==== __👉 Example: user-defined instance__
+-- ==== __👉 Example: a user-defined instance__
 --
 -- @
 -- data MyRecord = MyRecord
